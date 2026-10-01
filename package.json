@@ -1,29 +1,34 @@
 {
   "name": "sdd-parallel-wave-executor",
-  "version": "0.2.0",
-  "description": "Install SDD parallel execution skills for Kiro, Codex OpenSpec, and Codex Spec Kit with npx.",
+  "version": "0.3.0",
+  "description": "Install SDD parallel execution skills for Kiro, OpenCode OpenSpec, Codex OpenSpec, and Codex Spec Kit with npx.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wonyoungLee/sdd-parallel-wave-executor.git"
+    "url": "git+https://github.com/chibipaper/sdd-parallel-wave-executor.git"
   },
   "bugs": {
-    "url": "https://github.com/wonyoungLee/sdd-parallel-wave-executor/issues"
+    "url": "https://github.com/chibipaper/sdd-parallel-wave-executor/issues"
   },
-  "homepage": "https://github.com/wonyoungLee/sdd-parallel-wave-executor#readme",
+  "homepage": "https://github.com/chibipaper/sdd-parallel-wave-executor#readme",
   "bin": {
     "sdd-parallel-wave-executor": "./bin/install.cjs"
   },
   "files": [
     ".kiro/skills/parallel-wave-executor/SKILL.md",
+    ".opencode/skills/openspec-parallel-apply/SKILL.md",
     ".codex/skills/openspec-parallel-apply/SKILL.md",
     ".codex/skills/speckit-parallel-implement/SKILL.md",
     "examples/openspec-demo.md",
     "examples/spec-kit-demo.md",
+    "tests/install-opencode.test.cjs",
     "bin/install.cjs",
     "README.md",
     "LICENSE"
   ],
+  "scripts": {
+    "test": "node tests/install-opencode.test.cjs"
+  },
   "engines": {
     "node": ">=16.7"
   }

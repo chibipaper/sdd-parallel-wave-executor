@@ -1,73 +1,106 @@
 # Parallel Executor Skills
 
-Install SDD parallel execution skills directly from GitHub with `npx`.
+Parallel execution skills for OpenSpec, OpenCode, Codex, Kiro, and Spec Kit.
 
-This fork adds an OpenCode-native, store-aware OpenSpec parallel apply skill while preserving the existing Kiro and Codex targets.
+This fork adds an **OpenCode-native, store-aware OpenSpec parallel apply skill** while preserving the original Codex and Kiro targets.
 
-## Install
+## Quick Start — OpenCode + OpenSpec
 
-From the root of the project where you want to install the skill.
+### 1. Install
 
-OpenCode + OpenSpec:
+From the root of the project where you want to run OpenSpec apply:
 
 ```bash
 npx github:chibipaper/sdd-parallel-wave-executor --target opencode
 ```
 
-Codex + OpenSpec:
+This installs:
 
-```bash
-npx github:chibipaper/sdd-parallel-wave-executor --target openspec
+```text
+.opencode/skills/openspec-parallel-apply/SKILL.md
 ```
 
-Codex + Spec Kit:
+Restart or reload OpenCode if the skill list does not refresh immediately.
 
-```bash
-npx github:chibipaper/sdd-parallel-wave-executor --target speckit
+### 2. Run an OpenSpec change
+
+In OpenCode:
+
+```text
+Use openspec-parallel-apply for <change-name>.
 ```
 
-Kiro remains available:
-
-```bash
-npx github:chibipaper/sdd-parallel-wave-executor --target kiro
-```
-
-Install everything:
-
-```bash
-npx github:chibipaper/sdd-parallel-wave-executor --target all
-```
-
-For reproducible installs, pin a tag or commit once you create one for this fork.
-
-## Targets
-
-| Target | Installed path |
-| --- | --- |
-| `opencode` | `.opencode/skills/openspec-parallel-apply/SKILL.md` |
-| `openspec` | `.codex/skills/openspec-parallel-apply/SKILL.md` |
-| `speckit` | `.codex/skills/speckit-parallel-implement/SKILL.md` |
-| `kiro` | `.kiro/skills/parallel-wave-executor/SKILL.md` |
-| `codex` | Installs both Codex skills: OpenSpec and Spec Kit |
-| `all` | Installs Kiro, OpenCode OpenSpec, Codex OpenSpec, and Spec Kit |
-
-## OpenCode + OpenSpec
-
-After installation, reload OpenCode if the skill list does not update immediately.
-
-Ask OpenCode to use the skill:
+Example:
 
 ```text
 Use openspec-parallel-apply for add-dark-mode.
 ```
 
+The skill resolves the OpenSpec change, builds a dependency graph, groups safe independent work into waves, shows you the execution plan, then uses isolated git worktrees for parallel implementation.
+
+### 3. Run from a registered OpenSpec store
+
 If the change lives in a registered OpenSpec store:
+
+```text
+Use openspec-parallel-apply for <change-name> from store <store-id>.
+```
+
+Example:
 
 ```text
 Use openspec-parallel-apply for add-dark-mode from store team-context.
 ```
 
-The OpenCode skill resolves OpenSpec state through the CLI instead of assuming a fixed `openspec/changes/{change}` path. It uses commands such as:
+The selected store stays attached to the OpenSpec CLI workflow while the implementation repository can remain separate.
+
+### 4. Update
+
+Run the same install command again:
+
+```bash
+npx github:chibipaper/sdd-parallel-wave-executor --target opencode
+```
+
+The installer replaces the existing OpenCode skill directory with the latest version.
+
+### 5. Uninstall
+
+macOS / Linux / Git Bash:
+
+```bash
+rm -rf .opencode/skills/openspec-parallel-apply
+```
+
+Windows PowerShell:
+
+```powershell
+Remove-Item -Recurse -Force .opencode\skills\openspec-parallel-apply
+```
+
+Uninstalling only removes the installed OpenCode skill. It does **not** delete OpenSpec changes, implementation files, worktrees from previous runs, or git history.
+
+## What the OpenCode Skill Does
+
+The OpenCode skill:
+
+1. resolves the selected OpenSpec change and optional store through the OpenSpec CLI;
+2. reads OpenSpec's apply instructions and resolved context;
+3. builds a conservative dependency graph from tasks, shared contracts, file overlap, and explicit ordering;
+4. groups independent work into ordered waves;
+5. shows the execution plan before creating branches or worktrees;
+6. runs independent groups through OpenCode subagents/tasks in isolated git worktrees;
+7. integrates and validates each wave before starting dependent work;
+8. runs final repository validation;
+9. leaves the final implementation as local reviewable changes.
+
+It does **not** assume top-level task headings are sequential. Actual dependencies, shared contracts, and file ownership determine whether work can safely run concurrently.
+
+## OpenSpec CLI Integration
+
+The OpenCode skill uses OpenSpec as the source of truth rather than assuming a fixed `openspec/changes/{change}` layout.
+
+Typical commands include:
 
 ```bash
 openspec store list --json
@@ -75,75 +108,113 @@ openspec status --change "<change>" --json [--store <id>]
 openspec instructions apply --change "<change>" --json [--store <id>]
 ```
 
-The returned OpenSpec context drives execution. This means custom schemas and registered stores can provide their own resolved change root, context files, task artifact, and apply instructions.
+The returned OpenSpec context drives execution, including the resolved change root, schema, context files, task state, apply instructions, and referenced stores.
 
-## Parallel Apply Model
-
-The OpenCode skill:
-
-1. resolves the selected OpenSpec change and optional store through the OpenSpec CLI;
-2. reads the apply instructions and resolved context;
-3. builds a conservative dependency graph from tasks, shared contracts, file overlap, and explicit ordering;
-4. groups independent work into ordered waves;
-5. runs independent groups through OpenCode tasks/subagents in isolated git worktrees;
-6. validates each wave before starting dependent work;
-7. integrates successful branches in deterministic order;
-8. runs final repository validation;
-9. leaves the final implementation as local uncommitted changes for review.
-
-It does **not** treat top-level task headings as automatically sequential. Headings are considered organizational evidence; actual dependencies, shared contracts, and file ownership determine whether work can run concurrently.
+This lets the skill support repo-local changes, registered stores, and custom OpenSpec schemas without hard-coding artifact paths.
 
 ## Store-Aware Behavior
 
-A registered OpenSpec store may live outside the implementation repository. The skill therefore keeps two locations distinct:
+A registered OpenSpec store may live outside the implementation repository. The skill keeps those locations separate:
 
 ```text
-OpenSpec store/change root
-        │
-        │ requirements + tasks + apply instructions
-        ▼
-parallel apply coordinator
-        │
-        ▼
-implementation git repository
+OpenSpec store / change root
+          │
+          │ requirements + tasks + apply context
+          ▼
+ parallel apply coordinator
+          │
+          ▼
+ implementation git repository
 ```
 
-The coordinator resolves OpenSpec state once and passes bounded context to workers. Workers do not independently rediscover OpenSpec state, which reduces inconsistent interpretations between parallel agents.
+The coordinator resolves OpenSpec state once and passes bounded context to each worker. Parallel workers do not independently rediscover OpenSpec state.
 
-When OpenSpec instructions reference another store, the coordinator should fetch only the required spec or context rather than copying the entire referenced store into every worker.
+## Wave Execution Model
 
-## Codex + OpenSpec
+Dependent waves are created **just in time** from the current validated integration HEAD:
 
-The original Codex OpenSpec target remains available:
+```text
+OpenSpec resolve
+      │
+      ▼
+dependency graph
+      │
+      ▼
+Wave 1
+ ├─ worker A
+ └─ worker B
+      │
+      ▼
+merge + validate
+      │
+      ▼
+current HEAD
+      │
+      ▼
+create Wave 2 worktrees
+      │
+      ▼
+Wave 2
+ ├─ worker C
+ └─ worker D
+      │
+      ▼
+merge + validate
+```
+
+This ensures dependent workers see the implementation produced by earlier waves.
+
+## Other Installation Targets
+
+| Target | Installed path |
+| --- | --- |
+| `opencode` | `.opencode/skills/openspec-parallel-apply/SKILL.md` |
+| `openspec` | `.codex/skills/openspec-parallel-apply/SKILL.md` |
+| `speckit` | `.codex/skills/speckit-parallel-implement/SKILL.md` |
+| `kiro` | `.kiro/skills/parallel-wave-executor/SKILL.md` |
+| `codex` | Installs both Codex OpenSpec and Spec Kit skills |
+| `all` | Installs all available skills |
+
+### Codex + OpenSpec
+
+```bash
+npx github:chibipaper/sdd-parallel-wave-executor --target openspec
+```
+
+Then ask Codex:
 
 ```text
 Run the OpenSpec tasks in parallel apply batches.
 ```
 
-It installs to:
+### Codex + Spec Kit
 
-```text
-.codex/skills/openspec-parallel-apply/SKILL.md
+```bash
+npx github:chibipaper/sdd-parallel-wave-executor --target speckit
 ```
 
-The OpenCode skill is the primary store-aware implementation in this fork.
-
-## Spec Kit
-
-Ask Codex:
+Then ask Codex:
 
 ```text
 Run the Spec Kit [P] tasks in parallel while respecting phases.
 ```
 
-The Spec Kit skill respects phases, dependencies, user-story groupings, and `[P]` task markers. It downgrades same-file or same-component work to sequential execution.
+### Kiro
 
-## Kiro
+```bash
+npx github:chibipaper/sdd-parallel-wave-executor --target kiro
+```
 
-Ask Kiro:
+Then ask Kiro:
 
 ```text
 Run the Kiro spec tasks with parallel waves.
+```
+
+### Install Everything
+
+```bash
+npx github:chibipaper/sdd-parallel-wave-executor --target all
 ```
 
 ## Requirements
@@ -151,7 +222,7 @@ Run the Kiro spec tasks with parallel waves.
 - Node.js 16.7 or newer for the installer.
 - Git repository for implementation work.
 - For OpenCode parallel execution:
-  - OpenCode with task/subagent delegation available;
+  - OpenCode with subagent/task delegation available;
   - OpenSpec CLI installed and available on `PATH`;
   - a resolvable OpenSpec change, repo-local or in a registered store.
 - Clean implementation working tree before worktree creation.
@@ -172,23 +243,26 @@ The test verifies that `--target opencode` installs:
 
 and that the installed skill contains the OpenCode/OpenSpec CLI workflow.
 
-## Update
+## Uninstall Other Targets
 
-Run the same install command again from the target project root. The installer replaces the selected skill directory.
-
-## Uninstall
-
-Remove the installed skill directory or directories:
+macOS / Linux / Git Bash:
 
 ```bash
-rm -rf .opencode/skills/openspec-parallel-apply
 rm -rf .codex/skills/openspec-parallel-apply
 rm -rf .codex/skills/speckit-parallel-implement
 rm -rf .kiro/skills/parallel-wave-executor
+```
+
+Windows PowerShell:
+
+```powershell
+Remove-Item -Recurse -Force .codex\skills\openspec-parallel-apply
+Remove-Item -Recurse -Force .codex\skills\speckit-parallel-implement
+Remove-Item -Recurse -Force .kiro\skills\parallel-wave-executor
 ```
 
 ## Notes
 
 OpenSpec does not have a native "wave" concept. This project derives safe parallel waves from OpenSpec tasks and their dependencies.
 
-OpenSpec store support is beta, so this fork intentionally treats OpenSpec CLI JSON output as the compatibility boundary instead of parsing registry files or hard-coding store filesystem layouts.
+OpenSpec store support is beta, so this fork intentionally treats OpenSpec CLI JSON output as the compatibility boundary rather than parsing registry files or hard-coding store filesystem layouts.

@@ -1,69 +1,47 @@
 ---
 name: openspec-parallel-apply
 description: Execute OpenSpec change tasks in parallel apply waves from OpenCode, using OpenSpec CLI-resolved context, optional stores, isolated git worktrees, ordered integration, and final local uncommitted changes for review.
+compatibility: Requires OpenCode, OpenSpec CLI, and git.
 ---
 
 # Parallel Apply Executor for OpenSpec (OpenCode)
 
-Use this skill when the user asks OpenCode to implement an OpenSpec change in parallel, for example:
+Use this skill when the user asks OpenCode to implement an existing OpenSpec change in parallel.
 
-- "Run the OpenSpec tasks in parallel."
-- "OpenSpec apply in parallel."
-- "Use parallel waves for this OpenSpec change."
-- "opsx apply 병렬로 실행해줘"
+OpenSpec is the source of truth for change location, schema, apply state, context files, instructions, references, and tasks. Do not assume a fixed `openspec/changes/{change}` layout when the CLI can resolve it.
 
-## Scope
-
-This skill implements an existing OpenSpec change. OpenSpec itself remains the source of truth for change location, schema, apply instructions, context files, and task state.
-
-Do not hard-code `openspec/changes/{change}` as the only valid location. A change may live in the current project or in a registered OpenSpec store.
-
-Do not archive or sync the change unless the user explicitly asks. This skill only applies implementation tasks and updates completed task checkboxes when appropriate.
+Do not archive or sync a change unless explicitly requested.
 
 ## Requirements
 
-- OpenCode with task/subagent delegation available for actual parallel execution.
-- OpenSpec CLI available on `PATH`.
-- A git repository for the implementation target.
-- A clean working tree before worktree creation.
+- OpenCode with subagent/task delegation available for actual parallel execution.
+- OpenSpec CLI on `PATH`.
+- A git repository containing the implementation target.
+- A clean implementation working tree before worktree creation.
 
 ## Store Selection
 
-A store is a standalone OpenSpec repository registered on the machine.
+If the user names a store, or the work is known to live in one:
 
-1. If the user explicitly names a store, run:
+```bash
+openspec store list --json
+```
 
-   ```bash
-   openspec store list --json
-   ```
+Verify the store id exists, then keep `--store <id>` sticky on OpenSpec commands that support it.
 
-   Verify the requested store id exists.
+Without a selected store, let OpenSpec resolve the nearest/default repo-local root. Do not parse the store registry or guess store paths.
 
-2. If the work is already known to live in a store, resolve that store id the same way.
-
-3. Once a store is selected, treat it as sticky for the rest of the OpenSpec workflow. Append:
-
-   ```text
-   --store <id>
-   ```
-
-   to OpenSpec commands that support store selection.
-
-4. If no store is selected, operate against the nearest repo-local `openspec/` root. Do not invent a store.
-
-Store support is beta in OpenSpec. Prefer OpenSpec CLI JSON output over parsing registry files or assuming filesystem layouts.
+OpenSpec stores are beta, so consume CLI JSON rather than relying on internal file layouts.
 
 ## Resolve the Change Through OpenSpec
 
-Never infer the change root or context files from conventional paths when the CLI can resolve them.
-
-If the user names the change, use that change id. Otherwise run:
+If the user did not name a change:
 
 ```bash
 openspec list --json [--store <id>]
 ```
 
-and ask the user to choose when more than one active change is plausible.
+If more than one active change is plausible, ask the user to choose.
 
 Resolve status:
 
@@ -71,151 +49,162 @@ Resolve status:
 openspec status --change "<change>" --json [--store <id>]
 ```
 
-Require planning artifacts to be complete enough for apply. Respect `nextSteps` from OpenSpec instead of guessing what artifact is missing.
+Use these fields when present:
 
-Fetch apply instructions:
+- `changeName`
+- `schemaName`
+- `changeRoot`
+- `artifactPaths`
+- `nextSteps`
+- `actionContext`
+- `isPlanningComplete`
+- `applyRequires`
+- `root`
+
+Do not treat `isComplete` as implementation completion; it is a planning-completeness compatibility alias.
+
+Fetch the authoritative apply payload:
 
 ```bash
 openspec instructions apply --change "<change>" --json [--store <id>]
 ```
 
-Treat this JSON as the authoritative execution context. Capture, when present:
+Use its returned:
 
-- change name
-- schema name
-- resolved change root
-- task artifact/path
-- task list and completion state
-- context files
-- apply instructions / operation guidance
-- referenced-store indexes or fetch hints
+- `changeName`
+- `changeDir`
+- `schemaName`
+- `contextFiles`
+- `progress`
+- `tasks`
+- `state`
+- `missingArtifacts`
+- `instruction`
+- `references`
+- `context`
+- `operationGuidance`
+- `root`
 
-Do not assume the context consists only of `proposal.md`, `design.md`, `specs/**/*.md`, and `tasks.md`; custom schemas may return different files.
+If `state` is `blocked`, stop and report `missingArtifacts` / relevant `nextSteps`.
+If `state` is `all_done`, do not run implementation workers.
 
-If the instructions reference specs from another registered store, fetch only the relevant spec through the command supplied by OpenSpec (for example `openspec show ... --store <id>`). Do not copy an entire referenced store into worker context.
+Read only the returned context needed for the assigned work. Custom schemas may return different artifact sets, so do not hard-code proposal/design/spec/tasks paths.
+
+For referenced stores, follow the fetch command/hints supplied by OpenSpec and retrieve only the relevant specs.
+
+## Determine the Implementation Repository
+
+The OpenSpec root and the code repository may be different directories.
+
+Use user context plus OpenSpec `actionContext`/apply context to identify the code repository to edit. Do not silently assume a registered planning store is also the implementation repository.
+
+If the implementation repository cannot be determined from available context, stop before any write operation and report the ambiguity.
 
 ## OpenCode Capability Check
 
-Before executing in parallel, verify that the current OpenCode session can delegate independent work to separate tasks/subagents.
+Before claiming parallel execution, verify the current OpenCode session can invoke independent child agents/tasks.
 
-- If delegation is available, use one worker per independent task group or wave unit.
-- If delegation is unavailable, do not pretend work is parallel. Show the plan and execute sequentially only with the user's approval.
+- When delegation is available, use separate workers for safe independent groups.
+- When delegation is unavailable, do not describe the run as parallel. Show the plan and execute sequentially only with user approval.
 
 ## Safety Rules
 
 - Show the execution plan and get user approval before creating worktrees, branches, commits, or workers.
-- Require a clean git working tree before starting.
+- Require a clean implementation working tree.
 - Never run `git push`.
 - Never run `git reset --hard`.
-- Never delete branches, worktrees, or manifests after a failure without user approval.
 - Create a backup branch before integration.
-- Keep intermediate work under `.worktrees/openspec-apply-{runId}/`.
-- Leave the final implementation on the user's current branch as local uncommitted changes for review.
+- Keep run resources under `.worktrees/openspec-apply-{runId}/` and `.opencode/tmp/`.
+- On failure, preserve evidence unless the user approves cleanup.
+- Leave the final implementation as local reviewable changes on the user's branch.
 
 ## Preflight
 
-1. Resolve the selected store, if any.
-2. Resolve the selected change with `openspec status --json`.
-3. Fetch `openspec instructions apply --json`.
-4. Identify the implementation repository. The OpenSpec store and implementation repository may be different directories; do not assume the change root is the git repo to edit.
-5. Read only the resolved context needed to understand the change and task dependencies.
-6. Run in the implementation repository:
+In the implementation repository:
 
-   ```bash
-   git status --short
-   git branch --show-current
-   git rev-parse HEAD
-   ```
+```bash
+git status --short
+git branch --show-current
+git rev-parse HEAD
+```
 
-7. Stop if the implementation repository has uncommitted changes.
-8. Check that `.gitignore` contains `.worktrees/`. If missing, include adding it in the approval plan.
-9. Check for leftovers from earlier runs:
+Stop if there are uncommitted changes.
 
-   ```text
-   .worktrees/openspec-apply-*
-   .opencode/tmp/openspec-apply-*.json
-   branches matching openspec-apply-*
-   ```
+Check `.gitignore` for `.worktrees/`; include adding it in the approval plan if absent.
 
-10. Generate `runId`:
+Check for leftovers:
 
-   ```text
-   openspec-{changeSlug}-{YYYYMMDDHHmmss}
-   ```
+```text
+.worktrees/openspec-apply-*
+.opencode/tmp/openspec-apply-*.json
+branches matching openspec-apply-*
+```
+
+Generate:
+
+```text
+runId = openspec-{changeSlug}-{YYYYMMDDHHmmss}
+```
 
 ## Build the Dependency Model
 
-Use OpenSpec's returned tasks and instructions first. Use the rendered task artifact only as additional evidence.
+Use the apply payload's `tasks` plus resolved context and instructions.
 
-For every task, capture:
+For each task capture:
 
-- task id / checkbox text
-- description
-- explicit dependencies
-- target files or modules mentioned
-- related requirements/scenarios from the resolved context
-- shared contracts such as API routes, schemas, migrations, or common configuration
+- task id and description
+- explicit prerequisite text
+- likely target files/modules
+- related requirements/scenarios
+- API/schema/type/migration/config contracts consumed or produced
 
-Build a conservative dependency graph.
+A task depends on another when OpenSpec says so, task text establishes a prerequisite, it consumes a contract produced by the other task, both must edit a tightly coupled area, or the design/instructions establish ordering.
 
-A task depends on another task when any of the following is true:
-
-- OpenSpec explicitly says so.
-- Its task text names the other task as a prerequisite.
-- It consumes an API/schema/type/migration/config produced by the other task.
-- Both tasks must modify the same file or tightly coupled component and cannot be safely merged independently.
-- The design/instructions establish an ordering constraint.
-
-Do not treat top-level headings as inherently sequential if the underlying tasks are actually independent. Headings are organizational evidence, not a dependency graph.
+Top-level task headings are organizational evidence only. Do not automatically convert headings into sequential waves.
 
 ## Parallel Wave Rules
 
 Create ordered waves from the dependency graph.
 
-Within one wave, tasks may run concurrently only when all of the following hold:
+Tasks/groups may share a wave only when:
 
 - all dependencies are satisfied by earlier waves
-- workers modify disjoint files or safely independent modules
-- workers do not independently redefine the same shared contract
-- no shared migration/config/schema/route ownership conflict exists
+- edits are disjoint or safely independent
+- they do not independently redefine the same shared contract
+- there is no shared migration/config/schema/route ownership conflict
 
-Downgrade to sequential execution when independence is unclear.
-
-Prefer larger coherent task groups over excessive worker fragmentation. Avoid assigning two workers changes that will obviously require manual conflict resolution.
-
+When independence is unclear, run sequentially.
+Prefer coherent groups over excessive fragmentation.
 Run at most 10 workers concurrently.
 
 ## Execution Plan
 
-Before modifying anything, show:
+Before writes, show:
 
-- selected OpenSpec change
-- selected store or `repo-local`
-- resolved change root
+- change and selected store / repo-local root
+- schema and resolved change root
 - implementation repository
-- schema name
-- task count
-- wave count
-- tasks per wave
-- parallel groups
-- groups downgraded to sequential and why
+- task count and wave count
+- tasks/groups per wave
+- parallel vs sequential groups and reasons
 - likely files/modules touched
-- worktree paths
-- branch names
+- worktree and branch naming
 - integration order
-- backup branch name
-- risks and shared-contract dependencies
+- backup branch
+- key dependency/contract risks
 
-Continue only after user approval.
+Continue only after approval.
 
 ## Preparation
 
-In the implementation repository, record:
+Record:
 
 ```bash
 git branch --show-current
 git rev-parse HEAD
 ```
+
+Call these `baseBranch` and `startCommit`.
 
 Create:
 
@@ -224,142 +213,121 @@ git branch backup/openspec-apply-before-{runId} {startCommit}
 mkdir -p .opencode/tmp
 ```
 
-Write:
+Write `.opencode/tmp/openspec-apply-{runId}.json` containing the run id, change/store/schema, change root, implementation repo, base branch, start commit, backup branch, resolved OpenSpec inputs, wave plan, worker status, changed files, checks, and errors.
 
-```text
-.opencode/tmp/openspec-apply-{runId}.json
-```
+Do **not** create every wave's worktree up front.
 
-Include:
+## Just-in-Time Worktrees
 
-- runId
-- change
-- store id, if any
-- schema
-- changeRoot
-- implementationRepo
-- baseBranch
-- startCommit
-- backupBranch
-- OpenSpec command inputs
-- resolved context files
-- wave metadata
-- worker status
-- changed files
-- checks run
-- errors
+Dependency correctness requires later waves to see earlier integrated changes.
 
-Create one worktree per concurrently executed task group:
+At the start of each wave:
 
-```bash
-git worktree add .worktrees/openspec-apply-{runId}/wave-{W}-group-{G} -b openspec-apply-{runId}-w{W}-g{G}
-```
+1. Record the current integration HEAD:
+
+   ```bash
+   waveBase=$(git rev-parse HEAD)
+   ```
+
+2. For each group in that wave, create its worktree explicitly from `waveBase`:
+
+   ```bash
+   git worktree add \
+     .worktrees/openspec-apply-{runId}/wave-{W}-group-{G} \
+     -b openspec-apply-{runId}-w{W}-g{G} \
+     "$waveBase"
+   ```
+
+3. Only then launch the wave's workers.
+
+Never launch a dependent wave from `startCommit` after earlier waves have integrated. Each wave must branch from the current validated integration HEAD.
 
 ## Worker Context
 
-Delegate each independent group to an OpenCode task/subagent with an explicit working directory.
+Delegate each group to a separate OpenCode subagent/task with an explicit absolute worktree path.
 
-Every worker prompt must include:
+Provide:
 
-- absolute worktree path
 - assigned task ids only
-- OpenSpec apply instructions relevant to those tasks
-- resolved context files relevant to those tasks
-- fetched referenced-store specs when required
-- shared API/schema/type contracts that must not be changed independently
-- required validation commands
+- relevant OpenSpec instruction/context content
+- relevant referenced specs
+- shared contracts that must remain stable
+- required focused validation commands
 
-Every worker must:
+Workers must:
 
-- work only inside its assigned worktree
+- work only inside the assigned worktree
 - implement only assigned tasks
 - inspect repository code before editing
-- preserve shared contracts supplied in its prompt
-- run relevant focused tests/build checks
+- preserve supplied shared contracts
+- run focused tests/build checks
 - report changed files, checks, failures, and completed task ids
-- not commit, push, merge, reset, create/delete worktrees, or perform cleanup
+- not commit, push, merge, reset, create/delete worktrees, or clean up
 
-Do not make every worker independently rediscover OpenSpec state. The coordinator resolves the change once and gives workers bounded context.
+The coordinator resolves OpenSpec state once. Do not make every worker independently rediscover the change.
 
-## Wave Execution
+## Wave Execution and Integration
 
-For each wave in order:
+For each wave, in order:
 
-1. Launch all safe groups in that wave concurrently.
-2. Wait for every group in the wave to finish.
-3. Review each worker's changed-file list and validation results.
-4. Do not start dependent waves when a prerequisite group failed.
-5. Commit successful worktree changes on their temporary branches.
-6. Integrate successful groups in a deterministic order.
-7. Run wave-level validation after integration.
-8. If validation fails, stop before starting the next dependent wave and report the failure.
+1. Create that wave's worktrees just-in-time from current HEAD.
+2. Launch all safe groups concurrently.
+3. Wait for every group in the wave.
+4. Review worker changed-file lists and validation results.
+5. Do not continue if a prerequisite group failed.
+6. Commit each successful worker branch:
 
-Parallelism applies within a wave; dependency ordering applies between waves.
+   ```bash
+   git -C <worktree> add -A
+   git -C <worktree> commit -m "feat(openspec apply): {task-group-summary}"
+   ```
 
-## Integration
+7. Merge successful group branches into `baseBranch` in deterministic order:
 
-Commit each successful worker branch:
+   ```bash
+   git merge <worker-branch> --no-edit
+   ```
 
-```bash
-git -C <worktree> add -A
-git -C <worktree> commit -m "feat(openspec apply): {task-group-summary}"
-```
+8. If conflicts occur, stop and report the branches/files. Do not auto-resolve, abort, or delete evidence without user authorization.
+9. Run wave-level validation on the integrated branch.
+10. Start the next wave only after wave-level validation succeeds.
 
-Merge groups into the original branch in wave order:
+After all waves integrate, run the repository's full required validation suite.
 
-```bash
-git merge <worker-branch> --no-edit
-```
+## Finalize Review State
 
-If a merge conflict occurs:
-
-- stop immediately
-- report the conflicting branches/files
-- do not auto-resolve unless the conflict is trivial and the user explicitly authorized automatic conflict resolution
-- do not abort or delete evidence without user approval
-- point to `backup/openspec-apply-before-{runId}`
-
-After all waves integrate successfully, run the repository's full required validation suite.
-
-Then convert the integration commits back into reviewable local changes:
+After successful final validation, convert temporary integration commits back into reviewable local changes:
 
 ```bash
 git reset --soft {startCommit}
 ```
 
-If the task artifact is writable from the current workflow, mark only genuinely completed tasks `[x]`. Use the resolved task path from OpenSpec rather than assuming `openspec/changes/{change}/tasks.md`.
+This intentionally leaves the implementation staged relative to `startCommit`.
 
-When the change lives in a different store/repository, do not mutate that store from an implementation worktree accidentally. Update its task artifact only through its resolved path and only after successful implementation evidence exists.
+If the OpenSpec progress artifact is writable, mark only tasks supported by successful implementation evidence as complete. Use the resolved task/progress path from OpenSpec rather than assuming `openspec/changes/{change}/tasks.md`.
+
+If the change lives in another store/repository, do not mutate that store from an implementation worktree. Update it only through its resolved path after successful implementation evidence exists.
 
 ## Cleanup
 
-For a successful run, remove only resources created by this run:
+After a successful run, remove only this run's worktrees and temporary worker branches. Preserve the backup branch unless the user asks to remove it.
 
-```bash
-git worktree remove --force <worktree>
-git branch -D <worker-branch>
-```
-
-Remove `.worktrees/openspec-apply-{runId}` if empty.
-
-Preserve the manifest until the final report is produced. For a failed run, preserve the manifest and report exact cleanup targets instead of deleting them.
+For failures, preserve the manifest and exact cleanup targets.
 
 ## Final Report
 
 Report:
 
-- selected change and store
-- completed waves / total waves
-- completed tasks / total tasks
-- failed or skipped tasks
+- change/store
+- completed waves and tasks
+- failed/skipped tasks
 - changed files
-- focused checks run by workers
-- wave-level checks
+- focused worker checks
+- wave-level validation
 - final validation suite
-- backup branch
-- start commit
+- backup branch and start commit
 - whether final changes are staged/uncommitted
-- task artifact updates
-- cleanup still needed
+- OpenSpec progress updates
+- remaining cleanup
 
 Never describe execution as parallel unless independent workers actually ran concurrently.

@@ -17,6 +17,11 @@ const targets = {
     source: path.join(packageRoot, ".codex", "skills", "openspec-parallel-apply"),
     target: path.join(targetRoot, ".codex", "skills", "openspec-parallel-apply"),
   },
+  opencode: {
+    label: "OpenCode OpenSpec",
+    source: path.join(packageRoot, ".opencode", "skills", "openspec-parallel-apply"),
+    target: path.join(targetRoot, ".opencode", "skills", "openspec-parallel-apply"),
+  },
   speckit: {
     label: "Codex Spec Kit",
     source: path.join(packageRoot, ".codex", "skills", "speckit-parallel-implement"),
@@ -27,6 +32,7 @@ const targets = {
 const aliases = {
   "spec-kit": "speckit",
   spec: "speckit",
+  "opencode-openspec": "opencode",
   codex: "codex",
 };
 
@@ -40,20 +46,21 @@ function samePath(left, right) {
 }
 
 function usage() {
-  console.log(`Usage: npx github:wonyoungLee/sdd-parallel-wave-executor [--target <target>]
+  console.log(`Usage: npx github:chibipaper/sdd-parallel-wave-executor [--target <target>]
 
 Targets:
   kiro       Install .kiro/skills/parallel-wave-executor (default)
   openspec   Install .codex/skills/openspec-parallel-apply
+  opencode   Install .opencode/skills/openspec-parallel-apply
   speckit    Install .codex/skills/speckit-parallel-implement
   codex      Install both Codex skills: openspec and speckit
-  all        Install kiro, openspec, and speckit
+  all        Install kiro, Codex OpenSpec, OpenCode OpenSpec, and Spec Kit
 
 Examples:
-  npx github:wonyoungLee/sdd-parallel-wave-executor
-  npx github:wonyoungLee/sdd-parallel-wave-executor --target openspec
-  npx github:wonyoungLee/sdd-parallel-wave-executor --target speckit
-  npx github:wonyoungLee/sdd-parallel-wave-executor --target codex`);
+  npx github:chibipaper/sdd-parallel-wave-executor --target opencode
+  npx github:chibipaper/sdd-parallel-wave-executor --target openspec
+  npx github:chibipaper/sdd-parallel-wave-executor --target speckit
+  npx github:chibipaper/sdd-parallel-wave-executor --target codex`);
 }
 
 function parseTarget(argv) {
@@ -133,4 +140,4 @@ for (const selectedTarget of selectedTargets) {
   installTarget(selectedTarget);
 }
 
-console.log("Restart or reload your Kiro/Codex session if the skill list does not update immediately.");
+console.log("Restart or reload your Kiro/Codex/OpenCode session if the skill list does not update immediately.");

@@ -1,52 +1,108 @@
 # OpenSpec Parallel Apply Demo
 
-This demo shows how to install and exercise the Codex OpenSpec skill in any repository that uses OpenSpec.
+This demo shows how to install and exercise the OpenCode OpenSpec parallel apply skill.
 
 ## Prerequisites
 
 - Git repository with a clean working tree
-- OpenSpec initialized in the project
-- At least one active change under `openspec/changes/{change}/`
-- `openspec/changes/{change}/tasks.md` exists
-- Codex session with sub-agent delegation available for actual parallel execution
+- OpenCode with task/subagent delegation available for actual parallel execution
+- OpenSpec CLI installed and available on `PATH`
+- At least one resolvable OpenSpec change, either repo-local or in a registered store
 
 ## Install
 
 ```bash
-npx github:wonyoungLee/sdd-parallel-wave-executor#v0.2.0 --target openspec
+npx github:chibipaper/sdd-parallel-wave-executor --target opencode
 ```
 
 This installs:
 
 ```text
-.codex/skills/openspec-parallel-apply/SKILL.md
+.opencode/skills/openspec-parallel-apply/SKILL.md
 ```
 
-Restart or reload Codex if the skill list does not refresh immediately.
+Restart or reload OpenCode if the skill list does not refresh immediately.
 
-## Run
+## Repo-Local Change
 
-In Codex, ask:
+In OpenCode, ask:
 
 ```text
-Use openspec-parallel-apply for openspec/changes/add-dark-mode.
+Use openspec-parallel-apply for add-dark-mode.
 ```
 
-Replace `add-dark-mode` with your active OpenSpec change name.
+The coordinator should resolve the change with OpenSpec rather than directly assuming a filesystem path:
+
+```bash
+openspec status --change "add-dark-mode" --json
+openspec instructions apply --change "add-dark-mode" --json
+```
+
+## Registered Store Change
+
+If the change belongs to a registered store, ask:
+
+```text
+Use openspec-parallel-apply for add-dark-mode from store team-context.
+```
+
+The coordinator should verify the store:
+
+```bash
+openspec store list --json
+```
+
+and then keep the selected store sticky through the workflow:
+
+```bash
+openspec status --change "add-dark-mode" --json --store team-context
+openspec instructions apply --change "add-dark-mode" --json --store team-context
+```
 
 ## Expected Flow
 
 The skill should:
 
-1. Read `openspec/changes/{change}/tasks.md`.
-2. Read related OpenSpec context such as `proposal.md`, `design.md`, and `specs/**/*.md`.
-3. Build ordered apply batches from task sections and dependency notes.
-4. Show an execution plan and wait for approval.
-5. Create isolated worktrees under `.worktrees/openspec-apply-{runId}/`.
-6. Run independent apply batches through Codex workers when available.
-7. Commit inside worktrees, merge successful branches in batch order, and soft reset to leave local uncommitted changes.
-8. Mark completed tasks in `tasks.md`.
-9. Report completed batches, failed tasks, changed files, checks run, and cleanup status.
+1. Resolve the selected OpenSpec store, if any.
+2. Resolve the change through `openspec status --json`.
+3. Fetch dynamic apply instructions through `openspec instructions apply --json`.
+4. Keep the OpenSpec change root separate from the implementation repository when they differ.
+5. Build a dependency graph from task dependencies, shared contracts, file ownership, and design constraints.
+6. Group safe independent work into ordered waves.
+7. Show the execution plan and wait for approval.
+8. Create isolated worktrees under `.worktrees/openspec-apply-{runId}/`.
+9. Run independent groups concurrently through OpenCode tasks/subagents.
+10. Validate each integrated wave before starting dependent waves.
+11. Run final repository validation.
+12. Mark only genuinely completed OpenSpec tasks when the task artifact is writable.
+13. Leave the final implementation as local uncommitted changes for review.
+
+## Example Wave Shape
+
+A generated task document might be visually organized like this:
+
+```text
+1. Backend
+2. Frontend
+3. Integration
+4. Tests
+```
+
+The skill must not automatically interpret that as:
+
+```text
+Backend -> Frontend -> Integration -> Tests
+```
+
+If backend and frontend only depend on a previously defined contract, the dependency model may instead be:
+
+```text
+              +-> Backend --+
+Contract -----+              +-> Integration -> Tests
+              +-> Frontend --+
+```
+
+Backend and frontend can then run in the same wave if they do not modify the same files or redefine the shared contract independently.
 
 ## Verification
 
@@ -57,39 +113,20 @@ git status --short
 git diff
 ```
 
-You should see local uncommitted changes on the original branch. No remote push should have occurred.
+You should see local implementation changes on the original branch. No remote push should have occurred.
 
-## Verified Install Smoke Test
+## Installer Smoke Test
 
-The installer was verified against a minimal sample repository with this structure:
-
-```text
-openspec/changes/add-dark-mode/
-├── proposal.md
-├── design.md
-├── specs/ui/spec.md
-└── tasks.md
-```
-
-Command:
+From this repository:
 
 ```bash
-node bin/install.cjs --target openspec
+npm test
 ```
 
-Observed output:
-
-```text
-Installed Codex OpenSpec skill to /private/tmp/pwe-smoke-openspec/.codex/skills/openspec-parallel-apply
-Restart or reload your Kiro/Codex session if the skill list does not update immediately.
-```
-
-Installed file:
-
-```text
-.codex/skills/openspec-parallel-apply/SKILL.md
-```
+The test installs the OpenCode target into a temporary directory and verifies the expected skill file exists and contains the OpenCode/OpenSpec CLI workflow.
 
 ## Notes
 
-OpenSpec does not have a native "wave" concept. This skill uses OpenSpec terminology and derives ordered apply batches from the change's `tasks.md`.
+OpenSpec does not have a native "wave" concept. The skill derives waves from dependency evidence.
+
+OpenSpec store support is beta. The skill therefore consumes OpenSpec CLI JSON output instead of parsing store registries or assuming fixed store directory layouts.
